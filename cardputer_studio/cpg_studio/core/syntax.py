@@ -11,7 +11,7 @@ import builtins
 import keyword
 import re
 
-KINDS = ("keyword", "constant", "builtin", "api", "string", "comment", "number",
+KINDS = ("keyword", "variable", "constant", "builtin", "api", "string", "comment", "number",
          "decorator", "definition", "self")
 
 _KEYWORDS = frozenset(keyword.kwlist) - {"True", "False", "None"}
@@ -94,6 +94,8 @@ def highlight_line(text: str, state: int = 0, api_names=frozenset()):
                 spans.append((i, len(word), "self"))
             elif word in _BUILTINS:
                 spans.append((i, len(word), "builtin"))
+            else:
+                spans.append((i, len(word), "variable"))
             i = end
             continue
         i += 1

@@ -18,6 +18,13 @@ class HighlightTests(unittest.TestCase):
         self.assertIn(("range", "builtin"), got)
         self.assertIn(("10", "number"), got)
 
+    def test_variables_are_classified(self):
+        got, _ = kinds("score = player.update(value)")
+        self.assertIn(("score", "variable"), got)
+        self.assertIn(("player", "variable"), got)
+        self.assertIn(("update", "variable"), got)
+        self.assertIn(("value", "variable"), got)
+
     def test_api_names_win_over_builtins(self):
         got, _ = kinds("quit()", api=frozenset({"quit"}))
         self.assertEqual(got, [("quit", "api")])

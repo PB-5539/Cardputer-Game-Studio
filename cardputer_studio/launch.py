@@ -64,7 +64,7 @@ def setup() -> None:
                                 "-r", REQUIREMENTS])
         if code != 0:
             raise SystemExit("pip install failed (exit code %d). Check your internet connection and try again; "
-                             "`python launch.py --reset` starts clean." % code)
+                            "`python launch.py --reset` starts clean." % code)
         with open(STAMP, "w") as f:
             f.write(requirements_hash())
 

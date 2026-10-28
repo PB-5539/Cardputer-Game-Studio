@@ -21,6 +21,7 @@ MUTED = "#9a9a9a"
 SYNTAX = {
     "keyword": "#569cd6",
     "constant": "#569cd6",
+    "variable": "#7eecff",
     "builtin": "#4ec9b0",
     "api": "#c586c0",          # engine functions stand out from ordinary builtins
     "string": "#ce9178",
