@@ -69,6 +69,7 @@ def setup() -> None:
             f.write(requirements_hash())
 
 
+
 def main(argv: list[str]) -> int:
     if "--check" in argv:
         for step in plan():
