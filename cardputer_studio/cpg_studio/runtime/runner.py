@@ -45,6 +45,26 @@ class Session:
         self.entry = entry
         self.module = None
         self._hooks: dict = {}
+        self._sounds_sent: set = set()
+
+    def _audio(self, op: str, snd, options: dict) -> None:
+        """Turn an engine audio call into a protocol message for the IDE's mixer."""
+        def emit(cmd: dict, blob: bytes = b"") -> None:
+            self.send(protocol.AUDIO, json.dumps(cmd).encode() + (b"\n" + blob if blob else b""))
+
+        if op == "tone":
+            emit({"op": "tone", "freq": options["freq"], "ms": options["ms"]})
+        elif op == "stop":
+            emit({"op": "stop", "id": snd.uid if snd is not None else None})
+        elif op == "play":
+            if snd.uid not in self._sounds_sent:
+                self._sounds_sent.add(snd.uid)
+                if snd.kind == "pcm":
+                    emit({"op": "load", "id": snd.uid, "kind": "pcm", "rate": snd.rate}, snd.data or b" ")
+                else:
+                    emit({"op": "load", "id": snd.uid, "kind": "tones", "notes": snd.notes,
+                          "wave": snd.wave, "volume": snd.volume})
+            emit({"op": "play", "id": snd.uid, "loop": options["loop"], "volume": options["volume"]})
 
     def _error(self, text: str) -> None:
         self.send(protocol.ERROR, text.encode("utf-8", "replace"))
@@ -62,6 +82,7 @@ class Session:
             self._error('Entry file "%s" not found. Set one with "Set as Entry Point" in the Workspace.\n' % self.entry)
             return False
         api._s.on_beep = lambda f, ms: self.send(protocol.STDOUT, ("[beep %d Hz, %d ms]\n" % (f, ms)).encode())
+        api._s.on_audio = self._audio
         api.inject_builtins()
         name = os.path.splitext(os.path.basename(self.entry))[0]
         try:

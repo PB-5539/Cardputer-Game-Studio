@@ -19,6 +19,7 @@ class RunnerController(QObject):
     frame = Signal(bytes)
     output = Signal(str, str)          # text, kind ("out" | "error" | "info")
     stats = Signal(dict)
+    audio = Signal(bytes)              # an audio command for the mixer (see core/mixer.py)
     started = Signal()
     stopped = Signal(str)              # reason shown in the status bar
 
@@ -95,6 +96,8 @@ class RunnerController(QObject):
                 self.output.emit(payload.decode("utf-8", "replace"), "out")
             elif kind == protocol.ERROR:
                 self.output.emit(payload.decode("utf-8", "replace"), "error")
+            elif kind == protocol.AUDIO:
+                self.audio.emit(payload)
             elif kind == protocol.INFO:
                 try:
                     self.stats.emit(json.loads(payload))

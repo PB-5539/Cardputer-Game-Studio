@@ -14,6 +14,7 @@ STDOUT = b"O"   # payload: utf-8 text the game printed
 ERROR = b"E"    # payload: utf-8 traceback / load error
 INFO = b"I"     # payload: utf-8 JSON stats {"fps", "frame_ms", "frames", "target_fps"}
 EXIT = b"X"     # payload: utf-8 reason ("ok", "error", "quit")
+AUDIO = b"A"    # payload: one line of JSON (the command), then optionally raw bytes (see core/mixer.py)
 
 _HEADER = struct.Struct(">cI")
 MAX_PAYLOAD = 16 * 1024 * 1024

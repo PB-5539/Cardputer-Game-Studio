@@ -16,6 +16,7 @@ from ..core.project import EXTENSION, Project, ProjectError
 from ..core.symbols import SymbolIndex
 from ..runtime import api, api_docs
 from . import theme
+from .audio_player import AudioPlayer
 from .editor import EditorTabs
 from .findbar import FindBar
 from .panels import ConsolePanel, DocsPanel, ProblemsPanel, RuntimePanel
@@ -88,6 +89,8 @@ class MainWindow(QMainWindow):
         self.act_stop.setEnabled(False)
         self.act_firmware = self._action("Export &Firmware (.bin)…", self.export_firmware,
                                          tip="Placeholder: not implemented yet")
+        self.act_mute = self._action("&Mute Preview Sound", self.audio_toggle)
+        self.act_mute.setCheckable(True)
         self.act_reset_layout = self._action("&Reset Layout", self.reset_layout)
 
     def _dock(self, title, widget, name):
@@ -126,6 +129,7 @@ class MainWindow(QMainWindow):
         self.side_tabs.addTab(self.runtime_panel, "Runtime")
         self.console = ConsolePanel()
         self.runner = RunnerController(self)
+        self.audio = AudioPlayer(self)
 
         self.dock_workspace = self._dock("Workspace", self.workspace, "dock-workspace")
         self.dock_preview = self._dock("Preview", self.preview, "dock-preview")
@@ -185,6 +189,7 @@ class MainWindow(QMainWindow):
                 toggle.setShortcut(shortcut)
             view.addAction(toggle)
         view.addSeparator()
+        view.addAction(self.act_mute)
         view.addAction(self.act_reset_layout)
 
     def _wire(self):
@@ -204,6 +209,7 @@ class MainWindow(QMainWindow):
         self.runner.frame.connect(self.preview.display.set_frame)
         self.runner.output.connect(self.console.append_text)
         self.runner.stats.connect(self.runtime_panel.update_stats)
+        self.runner.audio.connect(self.audio.handle)
         self.runner.started.connect(self._on_started)
         self.runner.stopped.connect(self._on_stopped)
         self.preview.display.key_event.connect(self.runner.send_key)
@@ -546,7 +552,11 @@ class MainWindow(QMainWindow):
     def stop_project(self):
         self.runner.stop()
 
+    def audio_toggle(self, *_):
+        self.audio.set_muted(self.act_mute.isChecked())
+
     def _on_started(self):
+        self.audio.clear()
         self.act_stop.setEnabled(True)
         self.preview.display.set_running(True)
         self.preview.set_status("Running %s" % self.project.entry)
@@ -554,6 +564,7 @@ class MainWindow(QMainWindow):
         self.console.append_text("▶ Running %s\n" % self.project.entry, "info")
 
     def _on_stopped(self, reason: str, log: bool = True):
+        self.audio.clear()
         self.act_stop.setEnabled(False)
         self.preview.display.set_running(False)
         self.preview.set_status(reason)
