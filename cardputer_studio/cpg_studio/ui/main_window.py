@@ -7,15 +7,17 @@ import posixpath
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication, QDockWidget, QFileDialog, QInputDialog, QLabel, QMainWindow,
-                               QMessageBox, QStackedWidget, QTabWidget)
+                               QMessageBox, QStackedWidget, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, firmware
-from ..core import templates
+from ..core import completion, hover, templates
 from ..core.diagnostics import check_source
 from ..core.project import EXTENSION, Project, ProjectError
+from ..core.symbols import SymbolIndex
 from ..runtime import api, api_docs
 from . import theme
 from .editor import EditorTabs
+from .findbar import FindBar
 from .panels import ConsolePanel, DocsPanel, ProblemsPanel, RuntimePanel
 from .preview import PreviewPanel
 from .runner_controller import RunnerController
@@ -29,6 +31,8 @@ class MainWindow(QMainWindow):
         self.project = templates.new_project("starter")
         self.settings = QSettings("CardputerStudio", "Studio")
         self._diag_pending: set[str] = set()
+        self.symbols = SymbolIndex(self.api_names)
+        self._symbols_stale = True
         self._diag_timer = QTimer(self)
         self._diag_timer.setSingleShot(True)
         self._diag_timer.setInterval(400)
@@ -70,6 +74,14 @@ class MainWindow(QMainWindow):
         self.act_copy = self._action("&Copy", lambda: self._edit("copy"), "Ctrl+C")
         self.act_paste = self._action("&Paste", lambda: self._edit("paste"), "Ctrl+V")
         self.act_select_all = self._action("Select &All", lambda: self._edit("selectAll"), "Ctrl+A")
+        self.act_find = self._action("&Find…", lambda: self._show_find(False), "Ctrl+F")
+        self.act_replace = self._action("&Replace…", lambda: self._show_find(True), "Ctrl+H")
+        self.act_find_next = self._action("Find &Next", lambda: self.findbar.find_next(), "F3")
+        self.act_find_prev = self._action("Find Pre&vious", lambda: self.findbar.find_prev(), "Shift+F3")
+        self.act_suggest = self._action("Trigger &Suggestions", lambda: self._editor_call("trigger_completion"), "Ctrl+Space")
+        self.act_next_occurrence = self._action("Select Next &Occurrence", lambda: self._editor_call("select_next_occurrence"), "Ctrl+D")
+        self.act_cursor_above = self._action("Add Cursor &Above", lambda: self._editor_call("add_cursor_above"), "Ctrl+Alt+Up")
+        self.act_cursor_below = self._action("Add Cursor &Below", lambda: self._editor_call("add_cursor_below"), "Ctrl+Alt+Down")
         self.act_run = self._action("▶  Run", self.run_project, "F5", "Run the project in the preview")
         self.act_stop = self._action("■  Stop", self.stop_project, "Shift+F5")
         self.act_restart = self._action("⟳  Restart", self.run_project, "Ctrl+F5")
@@ -90,8 +102,16 @@ class MainWindow(QMainWindow):
         self.welcome.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.welcome.setStyleSheet(f"color: {theme.MUTED}; font-size: 14px;")
         self.central = QStackedWidget()
+        self.findbar = FindBar()
+        self.editor_area = QWidget()
+        area_layout = QVBoxLayout(self.editor_area)
+        area_layout.setContentsMargins(0, 0, 0, 0)
+        area_layout.setSpacing(0)
+        area_layout.addWidget(self.findbar)
+        area_layout.addWidget(self.tabs, 1)
         self.central.addWidget(self.welcome)
-        self.central.addWidget(self.tabs)
+        self.central.addWidget(self.editor_area)
+        self.tabs.set_providers(self._complete_at, self._hover_at)
         self.setCentralWidget(self.central)
 
         self.workspace = WorkspaceTree()
@@ -143,6 +163,12 @@ class MainWindow(QMainWindow):
         edit.addSeparator()
         for a in (self.act_cut, self.act_copy, self.act_paste, self.act_select_all):
             edit.addAction(a)
+        edit.addSeparator()
+        for a in (self.act_find, self.act_replace, self.act_find_next, self.act_find_prev):
+            edit.addAction(a)
+        edit.addSeparator()
+        for a in (self.act_suggest, self.act_next_occurrence, self.act_cursor_above, self.act_cursor_below):
+            edit.addAction(a)
 
         run = mb.addMenu("&Run")
         for a in (self.act_run, self.act_stop, self.act_restart):
@@ -164,6 +190,7 @@ class MainWindow(QMainWindow):
     def _wire(self):
         self.tabs.text_edited.connect(self.on_text_edited)
         self.tabs.count_changed.connect(self._sync_central)
+        self.tabs.currentChanged.connect(lambda index=0: self.findbar.set_editor(self.tabs.current_editor()))
         self.workspace.open_requested.connect(self.open_file)
         self.workspace.new_file_requested.connect(self.new_file)
         self.workspace.new_folder_requested.connect(self.new_folder)
@@ -220,7 +247,7 @@ class MainWindow(QMainWindow):
         self.setWindowModified(self.project.dirty)
 
     def _sync_central(self, count: int):
-        self.central.setCurrentWidget(self.tabs if count else self.welcome)
+        self.central.setCurrentWidget(self.editor_area if count else self.welcome)
 
     def _problem_counts(self, errors: int, warnings: int):
         total = errors + warnings
@@ -248,6 +275,7 @@ class MainWindow(QMainWindow):
         self.problems.clear_all()
         self.preview.display.clear_frame()
         self.project = project
+        self._symbols_stale = True
         self.workspace.refresh(project)
         self.runtime_panel.set_status("Idle", project.entry)
         self.runtime_panel.reset_stats()
@@ -316,6 +344,7 @@ class MainWindow(QMainWindow):
         return value.strip() if ok else ""
 
     def _refresh_tree(self, select: str | None = None):
+        self._symbols_stale = True
         self.workspace.refresh(self.project)
         if select:
             self.workspace.select_path(select)
@@ -435,7 +464,42 @@ class MainWindow(QMainWindow):
         if callable(fn):
             fn()
 
+    def _editor_call(self, method: str):
+        ed = self.tabs.current_editor()
+        if ed is not None:
+            getattr(ed, method)()
+
+    def _show_find(self, replace: bool):
+        self.findbar.set_editor(self.tabs.current_editor())
+        self.findbar.show_find(replace)
+
+    def _symbol_index(self) -> SymbolIndex:
+        """Index of the project's functions and classes, rebuilt lazily after edits."""
+        if self._symbols_stale:
+            files = {p: self.project.read_text(p) for p in self.project.files() if p.endswith(".py")}
+            self.symbols = SymbolIndex.build(files, self.api_names, previous=self.symbols)
+            self._symbols_stale = False
+        return self.symbols
+
+    def _complete_at(self, path: str, text: str, offset: int):
+        self._sync_open_text(path, text)
+        return completion.complete(text, offset, path, self._symbol_index())
+
+    def _hover_at(self, path: str, text: str, line: int, col: int):
+        self._sync_open_text(path, text)
+        return hover.hover_html(text, line, col, path, self._symbol_index())
+
+    def _sync_open_text(self, path: str, text: str):
+        """The editor text is authoritative; make sure the project (and index) agree with it."""
+        try:
+            if self.project.is_file(path) and self.project.read_text(path) != text:
+                self.project.write_text(path, text)
+                self._symbols_stale = True
+        except ProjectError:
+            pass
+
     def on_text_edited(self, path: str, text: str):
+        self._symbols_stale = True
         try:
             self.project.write_text(path, text)
         except ProjectError as e:

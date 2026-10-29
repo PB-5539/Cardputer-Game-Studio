@@ -20,7 +20,7 @@ _QT_WORDS = {
     "information", "insert", "key", "kill", "left", "modifiers", "move", "next", "paste", "pos", "position",
     "question", "rect", "redo", "resize", "right", "scroll", "show", "start", "state", "text", "timeout",
     "top", "translated", "triggered", "type", "undo", "update", "value", "viewport", "warning", "widget",
-    "width", "write", "x", "y", "format", "font", "cursor", "item", "block", "name",
+    "width", "write", "x", "y", "format", "font", "cursor", "item", "block", "name", "toggled", "clicked", "activated", "popup", "complete", "copy", "cut", "paste",
 }
 
 
@@ -57,6 +57,9 @@ class _Dyn:
 
     def __call__(self, *args, **kwargs):
         return _Dyn()
+
+    def __getitem__(self, key):          # overloaded signals: signal[str]
+        return self
 
     # signal behaviour
     def connect(self, slot):
