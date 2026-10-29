@@ -24,6 +24,18 @@ Needs Python 3.9+ and an internet connection for the first run only.
 Every panel can be resized, closed, or dragged elsewhere (View menu; `Ctrl+B` workspace, `Ctrl+J` console;
 View > Reset Layout restores the default). Layout is remembered between runs.
 
+## Editor shortcuts
+
+| | |
+|---|---|
+| Autocomplete | pops up as you type; **Ctrl+Space** forces it. Knows engine functions (no import needed), your project's functions/classes/variables, `self.` members, built-ins, and a few stdlib modules (`math.`, `random.`...) |
+| Hover | engine docs, or for your own functions the signature, docstring, where it's defined, and a **Calls / Called by** tree |
+| Find / replace | **Ctrl+F**, **Ctrl+H**, F3 / Shift+F3. Toggles for match case, whole word, regex (`\1` works in the replacement). Enter = next, Ctrl+Alt+Enter = replace all |
+| Multi-cursor | **middle-mouse drag** = column select, **Alt+click** = add cursor, **Ctrl+Alt+Up/Down** = cursor above/below, **Ctrl+D** = next occurrence, **Esc** = back to one cursor |
+
+Hover only follows what it can see statically: `p.move()` on a variable isn't linked to `Player.move`,
+but `self.move()`, `module.func()` and plain calls are.
+
 ## Projects (.cpg)
 
 A `.cpg` file is a zip archive (`project.json` + `files/...`) holding your scripts and assets. The Workspace

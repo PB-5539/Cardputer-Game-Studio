@@ -111,6 +111,29 @@ class WindowTests(unittest.TestCase):
         self.win = mw.MainWindow()
         self.addCleanup(self.win.deleteLater)
 
+    def test_autocomplete_and_hover_are_wired_to_the_project(self):
+        w = self.win
+        text = w.project.read_text("main.py")
+        replace_len, items = w._complete_at("main.py", text + "\ncle", len(text) + 4)
+        self.assertEqual(replace_len, 3)
+        self.assertIn("clear", [c.name for c in items])
+        self.assertIn("clear", w._hover_at("main.py", "clear(BLACK)\n", 0, 2))
+
+    def test_symbol_index_follows_edits(self):
+        w = self.win
+        w.on_text_edited("main.py", "def brand_new_fn():\n    pass\n")
+        self.assertIn(("main.py", "brand_new_fn"), w._symbol_index().symbols)
+
+    @unittest.skipUnless(REAL_QT, "needs real Qt line edits")
+    def test_find_bar_finds_and_replaces_in_the_current_file(self):
+        w = self.win
+        ed = w.tabs.current_editor()
+        ed.setPlainText("aa bb aa\n")
+        w.findbar.set_editor(ed)
+        w.findbar.find_field.setText("aa")
+        w.findbar.refresh()
+        self.assertEqual(len(w.findbar._matches), 2)
+
     def test_starts_with_starter_project_open(self):
         w = self.win
         self.assertEqual((w.project.entry, w.tabs.current_path()), ("main.py", "main.py"))
