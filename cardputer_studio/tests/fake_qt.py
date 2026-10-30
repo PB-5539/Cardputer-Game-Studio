@@ -20,7 +20,7 @@ _QT_WORDS = {
     "information", "insert", "key", "kill", "left", "modifiers", "move", "next", "paste", "pos", "position",
     "question", "rect", "redo", "resize", "right", "scroll", "show", "start", "state", "text", "timeout",
     "top", "translated", "triggered", "type", "undo", "update", "value", "viewport", "warning", "widget",
-    "width", "write", "x", "y", "format", "font", "cursor", "item", "block", "name", "toggled", "clicked", "activated", "popup", "complete", "copy", "cut", "paste",
+    "width", "write", "x", "y", "format", "font", "cursor", "item", "block", "name", "toggled", "clicked", "activated", "popup", "complete", "stop", "play", "write", "available", "copy", "cut", "paste",
 }
 
 
@@ -360,10 +360,10 @@ def install() -> None:
     root = _FakeModule("PySide6")
     root.__path__ = []                       # behave like a package
     sys.modules["PySide6"] = root
-    for sub in ("QtCore", "QtGui", "QtWidgets"):
+    for sub in ("QtCore", "QtGui", "QtWidgets", "QtMultimedia"):
         mod = _FakeModule("PySide6." + sub)
         sys.modules["PySide6." + sub] = mod
         setattr(root, sub, mod)
     # one shared settings store and application object across the three fake modules
-    for sub in ("QtCore", "QtGui", "QtWidgets"):
+    for sub in ("QtCore", "QtGui", "QtWidgets", "QtMultimedia"):
         sys.modules["PySide6." + sub]._real = _REAL

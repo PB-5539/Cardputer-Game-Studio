@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from . import api
 from .keys import KEY_NAMES
 
-CATEGORIES = ("Game structure", "Display", "Colors and constants", "Input", "Timing and control", "Sound", "Project files")
+CATEGORIES = ("Game structure", "Display", "Sprites and tilemaps", "Colors and constants", "Input", "Timing and control", "Sound", "Project files")
 
 
 @dataclass(frozen=True)
@@ -106,6 +106,42 @@ DOCS = (
               "keystrokes. The Key Tester example shows what the engine sees. How the real keyboard produces the "
               "arrow names will be settled with the firmware build."),
 
+    # ---- sprites and tilemaps -------------------------------------------------------------
+    Doc("load_sprite", "Sprites and tilemaps", "load_sprite(path, frame_w=None, frame_h=None)",
+        "Load a PNG from your project as a Sprite. Give frame_w and frame_h to treat the image as a sheet of frames.",
+        covers=("load_sprite",),
+        params=(("path", 'file in the project, e.g. "assets/hero.png"'),
+                ("frame_w, frame_h", "size of one frame, if the image is a sprite sheet")),
+        returns="a Sprite with .w and .h (one frame's size), .frame_count and .pixel(x, y, frame)",
+        example='hero = load_sprite("assets/hero.png", 16, 16)   # a sheet of 16x16 frames\n\n'
+                'def draw():\n    clear()\n    draw_sprite(hero, 100, 60, frame=int(time_ms() / 150) % 4)',
+        notes="Magenta pixels (255, 0, 255) and transparent PNG pixels are see-through. Load sprites once (in setup or at "
+              "the top of the file): loading the same file again returns the same Sprite. Draw them in the Sprite Editor "
+              "(File > New Sprite) or import any PNG."),
+    Doc("draw_sprite", "Sprites and tilemaps", "draw_sprite(spr, x, y, frame=0, flip_x=False, flip_y=False)",
+        "Draw one frame of a Sprite with its top-left corner at (x, y). Parts off-screen are clipped.",
+        covers=("draw_sprite",),
+        params=(("spr", "a Sprite from load_sprite"), ("x, y", "top-left corner in pixels"),
+                ("frame", "which frame of the sheet, counting left to right then top to bottom; wraps around"),
+                ("flip_x, flip_y", "mirror the sprite horizontally / vertically")),
+        example="draw_sprite(hero, x, y, frame=2, flip_x=facing_left)"),
+    Doc("load_tilemap", "Sprites and tilemaps", "load_tilemap(path)",
+        "Load a tilemap made in the Tilemap Editor (a .map.json file) together with its tileset image.",
+        covers=("load_tilemap",), params=(("path", 'file in the project, e.g. "assets/level1.map.json"'),),
+        returns="a Tilemap with .w and .h (in tiles), .px_w and .px_h (in pixels), .tile_w, .tile_h, .layer_names, "
+                ".get(tx, ty, layer=0), .set(tx, ty, tile, layer=0), .is_solid(tx, ty) and .solid_at(x, y)",
+        example='level = load_tilemap("assets/level1.map.json")\n\ndef update(dt):\n'
+                '    if level.solid_at(px, py + 8):      # pixel position\n        on_ground = True',
+        notes="Tile numbers count left to right, top to bottom in the tileset; -1 means empty. Positions outside the map "
+              "count as solid, so characters cannot walk off it. Layers are drawn in order, first layer at the back."),
+    Doc("draw_tilemap", "Sprites and tilemaps", "draw_tilemap(tm, cam_x=0, cam_y=0, layer=None)",
+        "Draw the visible part of a Tilemap. Only the tiles on screen are drawn, so big maps stay fast.",
+        covers=("draw_tilemap",),
+        params=(("tm", "a Tilemap from load_tilemap"),
+                ("cam_x, cam_y", "map pixel shown at the top-left of the screen (scrolls the map)"),
+                ("layer", "draw only this layer (name or number); default draws all")),
+        example="draw_tilemap(level, cam_x, cam_y)\ndraw_sprite(hero, px - cam_x, py - cam_y)"),
+
     # ---- timing and control ---------------------------------------------------------------
     Doc("set_fps", "Timing and control", "set_fps(fps)", "Set the target frame rate (1-60, default 30).",
         covers=("set_fps",), params=(("fps", "frames per second; values outside 1-60 are clamped"),),
@@ -118,7 +154,32 @@ DOCS = (
     # ---- sound ----------------------------------------------------------------------------
     Doc("beep", "Sound", "beep(freq=880, ms=100)", "Play a tone on the speaker.", covers=("beep",),
         params=(("freq", "pitch in Hz"), ("ms", "length in milliseconds")), example="beep(440, 200)",
-        notes="The preview does not make sound yet: it prints '[beep 440 Hz, 200 ms]' in the console instead."),
+        notes="The preview plays the tone through your speakers and also prints '[beep 440 Hz, 200 ms]' in the console."),
+    Doc("load_sound", "Sound", "load_sound(path)",
+        "Load a sound from your project: a .wav file, or a tone sequence made in the Sound Editor (.sfx.json).",
+        covers=("load_sound",), params=(("path", 'file in the project, e.g. "assets/jump.sfx.json"'),),
+        returns="a Sound (pass it to play_sound)",
+        example='jump = load_sound("assets/jump.sfx.json")\n\ndef update(dt):\n    if key_pressed("space"):\n'
+                '        play_sound(jump)',
+        notes="WAV files are converted to 8-bit mono at 11 kHz (max 30 seconds) to match what the Cardputer can play; "
+              "short clips are best. Tone sequences are tiny and are the best fit for sound effects and chiptune."),
+    Doc("tones", "Sound", "tones(song, wave='square', volume=0.5)",
+        "Make a Sound from text: notes with a length in milliseconds, separated by spaces.",
+        covers=("tones",),
+        params=(("song", '"C4:200 E4:200 G4:400"; note names C4, F#3, Bb5 (A4 = 440 Hz) or a frequency like 440; '
+                         '"rest:100" is silence; a note without :ms lasts 200 ms'),
+                ("wave", '"square", "triangle", "saw" or "noise"'), ("volume", "0 to 1")),
+        returns="a Sound", example='coin = tones("B5:60 E6:240", "square")\nplay_sound(coin)'),
+    Doc("play_sound", "Sound", "play_sound(snd, loop=False, volume=1.0)",
+        "Start playing a Sound. Several sounds can play at the same time.",
+        covers=("play_sound",),
+        params=(("snd", "a Sound from load_sound or tones"), ("loop", "repeat until stopped"),
+                ("volume", "0 to 1")),
+        example="play_sound(music, loop=True, volume=0.6)"),
+    Doc("stop_sound", "Sound", "stop_sound(snd=None)",
+        "Stop one Sound, or everything that is playing when called with no argument.",
+        covers=("stop_sound",), params=(("snd", "the Sound to stop; leave out to stop all"),),
+        example="stop_sound()"),
 
     # ---- project files --------------------------------------------------------------------
     Doc("Project files", "Project files", "open('assets/name.txt')",

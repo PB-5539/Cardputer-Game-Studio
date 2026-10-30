@@ -13,6 +13,7 @@ import math
 import threading
 import time as _time
 
+from . import assets
 from .framebuf_sim import FrameBuffer
 
 WIDTH = 240
@@ -55,6 +56,8 @@ class _State:
         self.running = True
         self.t0 = _time.monotonic()
         self.on_beep = None
+        self.on_audio = None                 # callback(op, sound_or_None, **options); set by the runner
+        self.cache: dict = {}                # loaded sprites / tilemaps / sounds by path
 
 
 _s = _State()
@@ -159,6 +162,76 @@ def beep(freq=880, ms=100):
     cb = _s.on_beep
     if cb:
         cb(int(freq), int(ms))
+    _audio("tone", None, freq=int(freq), ms=int(ms))
+
+
+# ---- sprites and tilemaps ----------------------------------------------------------------------
+def _cached(kind, key, make):
+    full = (kind,) + key
+    value = _s.cache.get(full)
+    if value is None:
+        value = _s.cache[full] = make()
+    return value
+
+
+def load_sprite(path, frame_w=None, frame_h=None):
+    """Load a PNG as a Sprite (or a sheet of frames when frame_w and frame_h are given)."""
+    path = str(path).replace("\\", "/")
+    return _cached("sprite", (path, frame_w, frame_h), lambda: assets.load_sprite_file(path, frame_w, frame_h))
+
+
+def draw_sprite(spr, x, y, frame=0, flip_x=False, flip_y=False):
+    """Draw one frame of a Sprite with its top-left corner at (x, y)."""
+    if not isinstance(spr, assets.Sprite):
+        raise TypeError("draw_sprite needs a Sprite from load_sprite(), got %s" % type(spr).__name__)
+    _s.fb.blit_runs(spr.runs(frame, flip_x, flip_y), _i(x), _i(y))
+
+
+def load_tilemap(path):
+    """Load a tilemap .json file (made in the tilemap editor) as a Tilemap."""
+    path = str(path).replace("\\", "/")
+
+    def make():
+        text = assets.read_file(path, "tilemap").decode("utf-8", "replace")
+        return assets.tilemap_from_json(text, lambda name, tw, th: load_sprite(name, tw, th), path)
+    return _cached("tilemap", (path,), make)
+
+
+def draw_tilemap(tm, cam_x=0, cam_y=0, layer=None):
+    """Draw the part of a Tilemap the camera sees (cam_x, cam_y = map pixel at the screen's top-left)."""
+    if not isinstance(tm, assets.Tilemap):
+        raise TypeError("draw_tilemap needs a Tilemap from load_tilemap(), got %s" % type(tm).__name__)
+    tm.draw(_s.fb, _i(cam_x), _i(cam_y), layer)
+
+
+# ---- sound -------------------------------------------------------------------------------------
+def load_sound(path):
+    """Load a .wav file or a tone-sequence .json file as a Sound."""
+    path = str(path).replace("\\", "/")
+    return _cached("sound", (path,), lambda: assets.load_sound_file(path))
+
+
+def tones(song, wave="square", volume=0.5):
+    """Make a Sound from text like "C4:200 E4:200 G4:400" (note:milliseconds, "rest" for silence)."""
+    return assets.parse_note_string(str(song), "", wave, volume)
+
+
+def _audio(op, snd=None, **options):
+    cb = _s.on_audio
+    if cb:
+        cb(op, snd, options)
+
+
+def play_sound(snd, loop=False, volume=1.0):
+    """Play a Sound (from load_sound or notes). Several sounds can play at once."""
+    if not isinstance(snd, assets.Sound):
+        raise TypeError("play_sound needs a Sound from load_sound() or tones(), got %s" % type(snd).__name__)
+    _audio("play", snd, loop=bool(loop), volume=max(0.0, min(1.0, float(volume))))
+
+
+def stop_sound(snd=None):
+    """Stop one Sound, or everything that is playing when called with no argument."""
+    _audio("stop", snd)
 
 
 def quit():
@@ -170,6 +243,8 @@ __all__ = [
     "rgb", "BLACK", "WHITE", "RED", "GREEN", "BLUE", "YELLOW", "CYAN", "MAGENTA", "ORANGE", "GRAY",
     "clear", "pixel", "line", "rect", "circle", "text",
     "key_down", "key_pressed", "key_released", "keys_down", "keys_pressed",
+    "load_sprite", "draw_sprite", "load_tilemap", "draw_tilemap",
+    "load_sound", "tones", "play_sound", "stop_sound",
     "set_fps", "time_ms", "beep", "quit",
 ]
 

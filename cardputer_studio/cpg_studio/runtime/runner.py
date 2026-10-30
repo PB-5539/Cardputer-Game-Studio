@@ -17,7 +17,7 @@ import threading
 import time
 import traceback
 
-from . import api, protocol
+from . import api, audio_msgs, protocol
 
 MAX_DT = 0.1
 
@@ -45,6 +45,19 @@ class Session:
         self.entry = entry
         self.module = None
         self._hooks: dict = {}
+        self._sounds_sent: set = set()
+
+    def _audio(self, op: str, snd, options: dict) -> None:
+        """Turn an engine audio call into a protocol message for the IDE's mixer."""
+        if op == "tone":
+            self.send(protocol.AUDIO, audio_msgs.tone_message(options["freq"], options["ms"]))
+        elif op == "stop":
+            self.send(protocol.AUDIO, audio_msgs.stop_message(snd))
+        elif op == "play":
+            if snd.uid not in self._sounds_sent:              # samples and notes travel once per sound
+                self._sounds_sent.add(snd.uid)
+                self.send(protocol.AUDIO, audio_msgs.load_message(snd))
+            self.send(protocol.AUDIO, audio_msgs.play_message(snd, options["loop"], options["volume"]))
 
     def _error(self, text: str) -> None:
         self.send(protocol.ERROR, text.encode("utf-8", "replace"))
@@ -62,6 +75,7 @@ class Session:
             self._error('Entry file "%s" not found. Set one with "Set as Entry Point" in the Workspace.\n' % self.entry)
             return False
         api._s.on_beep = lambda f, ms: self.send(protocol.STDOUT, ("[beep %d Hz, %d ms]\n" % (f, ms)).encode())
+        api._s.on_audio = self._audio
         api.inject_builtins()
         name = os.path.splitext(os.path.basename(self.entry))[0]
         try:

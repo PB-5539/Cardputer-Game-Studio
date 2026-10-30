@@ -120,3 +120,24 @@ class FrameBuffer:
                         px = cx + col
                         if 0 <= px < self.width:
                             self.buf[(py * self.width + px) * 2:(py * self.width + px) * 2 + 2] = packed
+
+    def blit_runs(self, runs, x: int, y: int) -> None:
+        """Draw sprite data from Sprite.runs(): rows of (x offset, RGB565 bytes) visible stretches."""
+        width, height, buf = self.width, self.height, self.buf
+        for i, row in enumerate(runs):
+            yy = y + i
+            if yy < 0:
+                continue
+            if yy >= height:
+                break
+            base = yy * width
+            for rx, data in row:
+                x0 = x + rx
+                n = len(data) >> 1
+                if x0 >= width or x0 + n <= 0:
+                    continue
+                s = 0
+                if x0 < 0:
+                    s, x0 = -x0, 0
+                e = min(n, s + (width - x0))
+                buf[(base + x0) * 2:(base + x0 + e - s) * 2] = data[s * 2:e * 2]

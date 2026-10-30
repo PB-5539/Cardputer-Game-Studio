@@ -151,18 +151,133 @@ def draw():
         text("Enter = restart", 68, 66, WHITE)
 '''
 
+
+PLATFORM_MAIN = '''\
+# Sprites, a tilemap and sound. Open assets/ in the Workspace to edit them:
+#   hero.png (a 4-frame sprite sheet)   tiles.png (the tileset)
+#   level.map.json (the map)            jump.sfx.json / coin.sfx.json (sounds)
+
+hero = load_sprite("assets/hero.png", 8, 8)
+level = load_tilemap("assets/level.map.json")
+jump_sound = load_sound("assets/jump.sfx.json")
+coin_sound = load_sound("assets/coin.sfx.json")
+
+x, y = 20.0, 40.0
+vy = 0.0
+facing_left = False
+cam_x = 0.0
+coins = 0
+
+
+def setup():
+    set_fps(30)
+
+
+def solid_below(px, py):
+    return level.solid_at(px + 1, py + 8) or level.solid_at(px + 6, py + 8)
+
+
+def blocked(px, py):
+    return level.solid_at(px + 1, py + 1) or level.solid_at(px + 6, py + 1) or \\
+           level.solid_at(px + 1, py + 6) or level.solid_at(px + 6, py + 6)
+
+
+def update(dt):
+    global x, y, vy, facing_left, cam_x, coins
+    dx = (key_down("right") - key_down("left")) * 60 * dt
+    if dx and not blocked(x + dx, y):
+        x += dx
+        facing_left = dx < 0
+    vy += 300 * dt
+    next_y = y + vy * dt
+    if vy >= 0 and solid_below(x, next_y):          # landed: stand on top of the tile
+        vy = 0
+        y = int((next_y + 8) // 8) * 8 - 8
+        if key_pressed("space") or key_pressed("up"):
+            vy = -110
+            play_sound(jump_sound)
+    else:
+        y = next_y
+    tx, ty = int((x + 4) // 8), int((y + 4) // 8)
+    if level.get(tx, ty, "items") == 2:          # tile 2 is the coin
+        level.set(tx, ty, -1, "items")
+        coins += 1
+        play_sound(coin_sound)
+    if y > level.px_h:
+        x, y, vy = 20.0, 40.0, 0.0
+    cam_x = max(0, min(x - WIDTH / 2, level.px_w - WIDTH))
+
+
+def draw():
+    clear(rgb(40, 90, 160))
+    draw_tilemap(level, cam_x, 0)
+    frame = int(time_ms() / 120) % 2 if key_down("left") or key_down("right") else 0
+    draw_sprite(hero, x - cam_x, y, frame, flip_x=facing_left)
+    text("coins: %d" % coins, 4, 4, WHITE)
+'''
+
+
+def _platform_files() -> dict:
+    """The sprite, tileset, map and sounds for the sprite/tilemap/sound example (built in code)."""
+    from .pixelimage import PixelImage
+    from .sounddoc import SoundDoc
+    from .tilemap_doc import TilemapDoc
+
+    def paint(img, ox, rows, palette):
+        for y, row in enumerate(rows):
+            for x, ch in enumerate(row):
+                if ch in palette:
+                    img.set(ox + x, y, palette[ch] + (255,))
+
+    hero = PixelImage(32, 8)
+    body = {"r": (220, 50, 50), "s": (255, 205, 160), "k": (30, 30, 30), "b": (60, 90, 220)}
+    stand = ["..rrrr..", ".rrrrrr.", ".ssssss.", ".sksskss", "..ssss..", ".bbbbbb.", ".bbbbbb.", "..b..b.."]
+    step = ["..rrrr..", ".rrrrrr.", ".ssssss.", ".sksskss", "..ssss..", ".bbbbbb.", ".bbbbbb.", ".b....b."]
+    for i, rows in enumerate((stand, step, stand, step)):
+        paint(hero, i * 8, rows, body)
+    tiles = PixelImage(32, 8)
+    paint(tiles, 0, ["gggggggg", "gddgdddg", "dddddddd", "ddddddgd", "dgdddddd", "dddddddd", "dddgdddd", "dddddddd"],
+          {"g": (60, 170, 60), "d": (120, 80, 40)})
+    paint(tiles, 8, ["bbbbbbbb", "bwbbbbwb", "bbbbbbbb", "bbbwbbbb", "bbbbbbbb", "bbwbbbbb", "bbbbbbwb", "bbbbbbbb"],
+          {"b": (150, 150, 160), "w": (110, 110, 120)})
+    paint(tiles, 16, ["........", "..yyyy..", ".yyooyy.", ".yyooyy.", ".yyooyy.", ".yyooyy.", "..yyyy..", "........"],
+          {"y": (255, 220, 40), "o": (230, 160, 20)})
+    width, height = 60, 16
+    doc = TilemapDoc.new("assets/tiles.png", 8, 8, width, height)
+    doc.add_layer("items")
+    for x in range(width):
+        if not 22 <= x <= 25 and not 40 <= x <= 42:       # two gaps to jump over
+            doc.set(0, x, 13, 0)
+            doc.set(0, x, 14, 0 if x % 7 else 1)
+            doc.set(0, x, 15, 1)
+    for x, y in ((12, 9), (13, 9), (30, 9), (31, 9), (32, 9), (50, 8)):
+        doc.set(0, x, y, 1)
+        doc.set(1, x, y - 1, 2)
+    doc.solid = {0, 1}
+    return {"assets/hero.png": hero.to_png(), "assets/tiles.png": tiles.to_png(),
+            "assets/level.map.json": doc.to_json(),
+            "assets/jump.sfx.json": SoundDoc("square", 0.4, [["C5", 40], ["G5", 80]]).to_json(),
+            "assets/coin.sfx.json": SoundDoc("triangle", 0.5, [["B5", 50], ["E6", 160]]).to_json()}
+
+
 # key -> (menu title, files)
 TEMPLATES = {
     "starter": ("Starter game", {"main.py": STARTER_MAIN, "assets/readme.txt": ASSETS_README}),
     "keytest": ("Example: key tester", {"main.py": KEYTEST_MAIN}),
     "snake": ("Example: snake", {"main.py": SNAKE_MAIN}),
+    "platformer": ("Example: sprites, tilemap and sound", {"main.py": PLATFORM_MAIN}),
 }
 
 
 def new_project(template: str = "starter", name: str | None = None) -> Project:
     title, files = TEMPLATES[template]
     proj = Project(name or ("untitled" if template == "starter" else template))
-    for path, text in files.items():
-        proj.write_text(path, text)
+    if template == "platformer":
+        files = dict(files, **_platform_files())
+    for path, content in files.items():
+        if isinstance(content, bytes):
+            proj.write_bytes(path, content)
+        else:
+            proj.write_text(path, content)
     proj.dirty = False
     return proj

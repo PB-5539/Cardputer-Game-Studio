@@ -16,6 +16,8 @@ from ..core.project import EXTENSION, Project, ProjectError
 from ..core.symbols import SymbolIndex
 from ..runtime import api, api_docs
 from . import theme
+from .asset_editors import SoundEditor, SpriteEditor, TilemapEditor, WavViewer
+from .audio_player import AudioPlayer
 from .editor import EditorTabs
 from .findbar import FindBar
 from .panels import ConsolePanel, DocsPanel, ProblemsPanel, RuntimePanel
@@ -65,6 +67,9 @@ class MainWindow(QMainWindow):
         self.act_save_as = self._action("Save &As…", self.save_project_as, "Ctrl+Shift+S")
         self.act_new_file = self._action("New &File…", lambda: self.new_file(None), "Ctrl+Shift+N")
         self.act_new_folder = self._action("New F&older…", lambda: self.new_folder(None))
+        self.act_new_sprite = self._action("New &Sprite…", self.new_sprite)
+        self.act_new_tilemap = self._action("New &Tilemap…", self.new_tilemap)
+        self.act_new_sound = self._action("New So&und…", self.new_sound)
         self.act_import = self._action("&Import File…", lambda: self.import_files(None))
         self.act_export_docs = self._action("Export API &Reference…", self.export_api_docs)
         self.act_quit = self._action("&Quit", self.close, "Ctrl+Q")
@@ -88,6 +93,8 @@ class MainWindow(QMainWindow):
         self.act_stop.setEnabled(False)
         self.act_firmware = self._action("Export &Firmware (.bin)…", self.export_firmware,
                                          tip="Placeholder: not implemented yet")
+        self.act_mute = self._action("&Mute Preview Sound", self.audio_toggle)
+        self.act_mute.setCheckable(True)
         self.act_reset_layout = self._action("&Reset Layout", self.reset_layout)
 
     def _dock(self, title, widget, name):
@@ -126,6 +133,7 @@ class MainWindow(QMainWindow):
         self.side_tabs.addTab(self.runtime_panel, "Runtime")
         self.console = ConsolePanel()
         self.runner = RunnerController(self)
+        self.audio = AudioPlayer(self)
 
         self.dock_workspace = self._dock("Workspace", self.workspace, "dock-workspace")
         self.dock_preview = self._dock("Preview", self.preview, "dock-preview")
@@ -146,6 +154,9 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda checked=False, k=key: self.new_project(k))
             examples.addAction(act)
         file_menu.addAction(self.act_open)
+        file_menu.addSeparator()
+        for a in (self.act_new_sprite, self.act_new_tilemap, self.act_new_sound):
+            file_menu.addAction(a)
         file_menu.addSeparator()
         for a in (self.act_save, self.act_save_as):
             file_menu.addAction(a)
@@ -185,6 +196,7 @@ class MainWindow(QMainWindow):
                 toggle.setShortcut(shortcut)
             view.addAction(toggle)
         view.addSeparator()
+        view.addAction(self.act_mute)
         view.addAction(self.act_reset_layout)
 
     def _wire(self):
@@ -204,6 +216,7 @@ class MainWindow(QMainWindow):
         self.runner.frame.connect(self.preview.display.set_frame)
         self.runner.output.connect(self.console.append_text)
         self.runner.stats.connect(self.runtime_panel.update_stats)
+        self.runner.audio.connect(self.audio.handle)
         self.runner.started.connect(self._on_started)
         self.runner.stopped.connect(self._on_stopped)
         self.preview.display.key_event.connect(self.runner.send_key)
@@ -350,7 +363,56 @@ class MainWindow(QMainWindow):
             self.workspace.select_path(select)
         self._update_title()
 
+    @staticmethod
+    def asset_kind(path: str):
+        low = path.lower()
+        if low.endswith(".png"):
+            return "sprite"
+        if low.endswith(".map.json"):
+            return "tilemap"
+        if low.endswith(".sfx.json"):
+            return "sound"
+        if low.endswith(".wav"):
+            return "wav"
+        return None
+
+    def _open_asset(self, path: str, kind: str) -> None:
+        def make():
+            if kind == "sprite":
+                ed = SpriteEditor(path, self.project.read_bytes(path))
+                ed.changed.connect(self._asset_bytes_changed)
+            elif kind == "tilemap":
+                ed = TilemapEditor(path, self.project.read_text(path), self.project.read_bytes,
+                                   lambda: [f for f in self.project.files() if f.lower().endswith(".png")])
+                ed.changed.connect(self._asset_text_changed)
+            elif kind == "sound":
+                ed = SoundEditor(path, self.project.read_text(path), self.audio.handle)
+                ed.changed.connect(self._asset_text_changed)
+            else:
+                ed = WavViewer(path, self.project.read_bytes(path), self.audio.handle)
+            ed.path = path
+            return ed
+        self.tabs.open_asset(path, make)
+        self.workspace.select_path(path)
+
+    def _asset_bytes_changed(self, path: str, data: bytes):
+        try:
+            self.project.write_bytes(path, data)
+        except ProjectError as e:
+            self.statusBar().showMessage(str(e), 5000)
+        self._update_title()
+
+    def _asset_text_changed(self, path: str, text: str):
+        self._asset_bytes_changed(path, text.encode("utf-8"))
+
     def open_file(self, path: str, line: int = 0, col: int = 0):
+        kind = self.asset_kind(path)
+        if kind and self.project.is_file(path):
+            try:
+                self._open_asset(path, kind)
+            except ProjectError as e:
+                self.console.append_text("%s\n" % e, "warn")
+            return
         try:
             text = self.project.read_text(path)
         except ProjectError as e:
@@ -377,6 +439,84 @@ class MainWindow(QMainWindow):
             return
         self._refresh_tree(path)
         self.open_file(path)
+
+    # ---- new assets ------------------------------------------------------------------------------
+    def _asset_dir(self) -> str:
+        target = self.workspace.current_target_dir()
+        return target if target else "assets"
+
+    def _new_asset_path(self, title: str, label: str, default: str, ext: str):
+        name = self._ask(title, label, default)
+        if not name:
+            return None
+        if not name.lower().endswith(ext):
+            name = name[:-len(posixpath.splitext(name)[1])] + ext if posixpath.splitext(name)[1] in (".json", ".png") else name + ext
+        folder = self._asset_dir()
+        path = "%s/%s" % (folder, name) if folder else name
+        if self.project.exists(path):
+            self._warn("%s already exists." % path)
+            return None
+        return path
+
+    def _ask_size(self, title: str, label: str, default: str):
+        """Ask for 'WxH'; returns (w, h) or None."""
+        text = self._ask(title, label, default)
+        parts = text.lower().replace("×", "x").split("x") if text else []
+        try:
+            w, h = int(parts[0]), int(parts[1])
+            if w < 1 or h < 1:
+                raise ValueError
+            return w, h
+        except (ValueError, IndexError):
+            if text:
+                self._warn('Please enter a size like "16x16".')
+            return None
+
+    def _create_asset(self, path: str, data: bytes):
+        try:
+            self.project.write_bytes(path, data)
+        except ProjectError as e:
+            self._warn(str(e))
+            return
+        self._refresh_tree(path)
+        self.open_file(path)
+
+    def new_sprite(self):
+        path = self._new_asset_path("New Sprite", "File name:", "sprite.png", ".png")
+        size = path and self._ask_size("New Sprite", "Image size in pixels (a sprite sheet can be wider):", "16x16")
+        if path and size:
+            from ..core.pixelimage import PixelImage
+            if size[0] > 1024 or size[1] > 1024:
+                self._warn("Sprites can be at most 1024x1024 pixels.")
+                return
+            self._create_asset(path, PixelImage(*size).to_png())
+
+    def new_tilemap(self):
+        pngs = [f for f in self.project.files() if f.lower().endswith(".png")]
+        if not pngs:
+            self._warn("A tilemap needs a tileset image first: use New Sprite… (for example 80x8 holds ten 8x8 tiles) "
+                       "or import a PNG.")
+            return
+        path = self._new_asset_path("New Tilemap", "File name:", "level1.map.json", ".map.json")
+        if not path:
+            return
+        tileset, ok = QInputDialog.getItem(self, "New Tilemap", "Tileset image:", pngs, 0, False)
+        tile = ok and self._ask_size("New Tilemap", "Tile size in pixels:", "8x8")
+        size = tile and self._ask_size("New Tilemap", "Map size in tiles:", "30x17")
+        if tile and size:
+            from ..core.tilemap_doc import TilemapDoc, TilemapFormatError
+            try:
+                doc = TilemapDoc.new(tileset, tile[0], tile[1], size[0], size[1])
+            except TilemapFormatError as e:
+                self._warn(str(e))
+                return
+            self._create_asset(path, doc.to_json().encode("utf-8"))
+
+    def new_sound(self):
+        path = self._new_asset_path("New Sound", "File name:", "sound.sfx.json", ".sfx.json")
+        if path:
+            from ..core.sounddoc import SoundDoc
+            self._create_asset(path, SoundDoc(notes=[["C5", 80], ["E5", 80], ["G5", 160]]).to_json().encode("utf-8"))
 
     def new_folder(self, parent_dir):
         if parent_dir is None:
@@ -459,7 +599,7 @@ class MainWindow(QMainWindow):
         target = QApplication.focusWidget()
         fn = getattr(target, method, None)
         if not callable(fn):
-            target = self.tabs.current_editor()
+            target = self.tabs.currentWidget()
             fn = getattr(target, method, None)
         if callable(fn):
             fn()
@@ -546,7 +686,11 @@ class MainWindow(QMainWindow):
     def stop_project(self):
         self.runner.stop()
 
+    def audio_toggle(self, *_):
+        self.audio.set_muted(self.act_mute.isChecked())
+
     def _on_started(self):
+        self.audio.clear()
         self.act_stop.setEnabled(True)
         self.preview.display.set_running(True)
         self.preview.set_status("Running %s" % self.project.entry)
@@ -554,6 +698,7 @@ class MainWindow(QMainWindow):
         self.console.append_text("▶ Running %s\n" % self.project.entry, "info")
 
     def _on_stopped(self, reason: str, log: bool = True):
+        self.audio.clear()
         self.act_stop.setEnabled(False)
         self.preview.display.set_running(False)
         self.preview.set_status(reason)

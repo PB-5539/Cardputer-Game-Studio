@@ -723,9 +723,20 @@ class EditorTabs(QTabWidget):
             ed.setFocus()
         return ed
 
+    def open_asset(self, path: str, make_widget) -> QWidget:
+        """Open a non-text editor (sprite, tilemap, sound) as a tab; make_widget() builds it once."""
+        ed = self._editors.get(path)
+        if ed is None:
+            ed = make_widget()
+            self._editors[path] = ed
+            index = self.addTab(ed, posixpath.basename(path))
+            self.setTabToolTip(index, path)
+        self.setCurrentWidget(ed)
+        return ed
+
     def _close_index(self, index):
         ed = self.widget(index)
-        if isinstance(ed, CodeEditor):
+        if getattr(ed, "path", None) in self._editors:
             self.close_path(ed.path)
 
     def close_path(self, path: str) -> None:
@@ -755,5 +766,5 @@ class EditorTabs(QTabWidget):
 
     def set_diagnostics(self, path: str, diagnostics) -> None:
         ed = self._editors.get(path)
-        if ed is not None:
+        if isinstance(ed, CodeEditor):
             ed.set_diagnostics(diagnostics)
