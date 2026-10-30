@@ -3,6 +3,9 @@
 A VS Code-style desktop IDE for making M5Stack Cardputer games in Python, with a built-in preview of
 the Cardputer screen, so you can write and test a game without touching the device.
 
+> **How it works:** the `docs/` folder explains the architecture, file formats, runtime, editor and assets, plus
+> gotchas and notes for rebuilding it. Start with [docs/README.md](docs/README.md).
+
 ## Run it
 
     python launch.py
