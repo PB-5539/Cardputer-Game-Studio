@@ -17,7 +17,7 @@ import threading
 import time
 import traceback
 
-from . import api, protocol
+from . import api, audio_msgs, protocol
 
 MAX_DT = 0.1
 
@@ -49,22 +49,15 @@ class Session:
 
     def _audio(self, op: str, snd, options: dict) -> None:
         """Turn an engine audio call into a protocol message for the IDE's mixer."""
-        def emit(cmd: dict, blob: bytes = b"") -> None:
-            self.send(protocol.AUDIO, json.dumps(cmd).encode() + (b"\n" + blob if blob else b""))
-
         if op == "tone":
-            emit({"op": "tone", "freq": options["freq"], "ms": options["ms"]})
+            self.send(protocol.AUDIO, audio_msgs.tone_message(options["freq"], options["ms"]))
         elif op == "stop":
-            emit({"op": "stop", "id": snd.uid if snd is not None else None})
+            self.send(protocol.AUDIO, audio_msgs.stop_message(snd))
         elif op == "play":
-            if snd.uid not in self._sounds_sent:
+            if snd.uid not in self._sounds_sent:              # samples and notes travel once per sound
                 self._sounds_sent.add(snd.uid)
-                if snd.kind == "pcm":
-                    emit({"op": "load", "id": snd.uid, "kind": "pcm", "rate": snd.rate}, snd.data or b" ")
-                else:
-                    emit({"op": "load", "id": snd.uid, "kind": "tones", "notes": snd.notes,
-                          "wave": snd.wave, "volume": snd.volume})
-            emit({"op": "play", "id": snd.uid, "loop": options["loop"], "volume": options["volume"]})
+                self.send(protocol.AUDIO, audio_msgs.load_message(snd))
+            self.send(protocol.AUDIO, audio_msgs.play_message(snd, options["loop"], options["volume"]))
 
     def _error(self, text: str) -> None:
         self.send(protocol.ERROR, text.encode("utf-8", "replace"))

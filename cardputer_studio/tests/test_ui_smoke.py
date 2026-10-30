@@ -134,6 +134,31 @@ class WindowTests(unittest.TestCase):
         w.findbar.refresh()
         self.assertEqual(len(w.findbar._matches), 2)
 
+    def test_asset_files_open_in_their_own_editors_and_save_into_the_project(self):
+        from cpg_studio.core.pixelimage import PixelImage
+        from cpg_studio.core.sounddoc import SoundDoc
+        from cpg_studio.core.tilemap_doc import TilemapDoc
+        from cpg_studio.ui.asset_editors import SoundEditor, SpriteEditor, TilemapEditor, WavViewer
+        w = self.win
+        w.project.write_bytes("assets/hero.png", PixelImage(16, 16).to_png())
+        w.project.write_text("assets/level.map.json", TilemapDoc.new("assets/hero.png", 8, 8, 4, 4).to_json())
+        w.project.write_text("assets/jump.sfx.json", SoundDoc(notes=[["C4", 100]]).to_json())
+        for path, cls in (("assets/hero.png", SpriteEditor), ("assets/level.map.json", TilemapEditor),
+                          ("assets/jump.sfx.json", SoundEditor)):
+            w.open_file(path)
+            self.assertIsInstance(w.tabs.editor_for(path), cls, path)
+            self.assertEqual(w.tabs.editor_for(path).path, path)
+        self.assertEqual(w.asset_kind("x/boom.wav"), "wav")
+        self.assertIsNone(w.asset_kind("main.py"))
+        self.assertTrue(callable(WavViewer))
+        # an edit made in an asset editor lands in the project file
+        w._asset_text_changed("assets/jump.sfx.json", SoundDoc(notes=[["G4", 5]]).to_json())
+        self.assertIn("G4", w.project.read_text("assets/jump.sfx.json"))
+        w._asset_bytes_changed("assets/hero.png", PixelImage(2, 2).to_png())
+        self.assertEqual(PixelImage.from_png(w.project.read_bytes("assets/hero.png")).w, 2)
+        w.tabs.close_under("assets")
+        self.assertEqual(w.tabs.paths().count("assets/hero.png"), 0)
+
     def test_starts_with_starter_project_open(self):
         w = self.win
         self.assertEqual((w.project.entry, w.tabs.current_path()), ("main.py", "main.py"))

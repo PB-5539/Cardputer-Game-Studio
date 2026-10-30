@@ -509,5 +509,30 @@ class RunnerAudioTests(unittest.TestCase):
         self.assertEqual(len(blob), 1000)
 
 
+class ExampleProjectTests(unittest.TestCase):
+    def test_platformer_example_runs_and_uses_every_asset_type(self):
+        from cpg_studio.core import templates
+        proj = templates.new_project("platformer")
+        self.assertEqual(sorted(f for f in proj.files() if f.startswith("assets/")),
+                         ["assets/coin.sfx.json", "assets/hero.png", "assets/jump.sfx.json",
+                          "assets/level.map.json", "assets/tiles.png"])
+        with tempfile.TemporaryDirectory() as tmp:
+            proj.extract_to(tmp)
+            old_cwd, old_path = os.getcwd(), list(sys.path)
+            api._reset()
+            msgs = []
+            try:
+                session = Session(tmp, lambda kind, payload: msgs.append((kind, payload)))
+                ok = session.load() and session.run(max_frames=20)
+                self.assertTrue(ok, [p for k, p in msgs if k == protocol.ERROR])
+            finally:
+                api.remove_builtins()
+                os.chdir(old_cwd)
+                sys.path[:] = old_path
+                for m in [m for m in sys.modules if m == "main"]:
+                    del sys.modules[m]
+        self.assertEqual(len([1 for k, _ in msgs if k == protocol.FRAME]), 20)
+
+
 if __name__ == "__main__":
     unittest.main()

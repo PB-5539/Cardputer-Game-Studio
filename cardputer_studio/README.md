@@ -36,6 +36,25 @@ View > Reset Layout restores the default). Layout is remembered between runs.
 Hover only follows what it can see statically: `p.move()` on a variable isn't linked to `Player.move`,
 but `self.move()`, `module.func()` and plain calls are.
 
+## Sprites, tilemaps and sound
+
+Everything lives in the project (usually under `assets/`) and opens in its own editor when you double-click it.
+Create them from **File > New Sprite / Tilemap / Sound**, or import a PNG / WAV with **Import File**.
+
+| File | Editor | In a game |
+|---|---|---|
+| `hero.png` | pixel editor (pencil, fill, shapes, palette, undo, frame grid) | `hero = load_sprite("assets/hero.png", 8, 8)` then `draw_sprite(hero, x, y, frame=0)` |
+| `level.map.json` | tilemap editor (layers, solid tiles, tileset picker) | `level = load_tilemap(...)`, `draw_tilemap(level, cam_x, cam_y)`, `level.solid_at(x, y)` |
+| `jump.sfx.json` | tone-sequence editor with a little keyboard | `play_sound(load_sound("assets/jump.sfx.json"))` |
+| `boom.wav` | player only (converted to 8-bit, 11 kHz, 30 s max) | `play_sound(load_sound("assets/boom.wav"))` |
+
+Sound also works from code: `play_sound(tones("C4:100 E4:100 G4:200"))`. `beep()` now plays through your speakers too
+(View > Mute Preview Sound turns the preview audio off). Try **File > New From Example > sprites, tilemap and sound**.
+
+Notes: magenta (255, 0, 255) and transparent pixels are see-through. A PNG does not remember its frame size, so pass it
+to `load_sprite` (the sprite editor shows the exact call). Sprites are stored as full-colour RGBA PNGs and converted to the
+display's RGB565 when loaded.
+
 ## Projects (.cpg)
 
 A `.cpg` file is a zip archive (`project.json` + `files/...`) holding your scripts and assets. The Workspace
